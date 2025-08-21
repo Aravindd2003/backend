@@ -17,19 +17,44 @@ const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/frontend-arena';
 let db;
 
-const connectDB = async()=>{
-    try{
-        await mongoose.connect(`${MONGO_URI}`)
+const connectDB = async () => {
+  try {
+    console.log('Attempting to connect to MongoDB at:', MONGO_URI);
+    
+    // MongoDB connection options
+    const options = {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 10,
+      minPoolSize: 1,
+    };
+
+    // If it's an Atlas connection, add SSL options
+    if (MONGO_URI.includes('mongodb.net')) {
+      options.tls = true;
+      options.tlsAllowInvalidCertificates = true;
+      options.tlsAllowInvalidHostnames = true;
     }
-    catch(err){
-        console.log(err.message);
-        process.exit(1);
-    }
+
+    const client = new MongoClient(MONGO_URI, options);
+    await client.connect();
+    db = client.db();
+    console.log('✅ Connected to MongoDB successfully');
+    console.log('Database name:', db.databaseName);
+    console.log('Available collections:', await db.listCollections().toArray());
+    return client;
+  } catch (err) {
+    console.error('❌ MongoDB connection failed:', err.message);
+    console.error('Full error:', err);
+    throw err; // Don't exit, let the fallback handle it
+  }
 };
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173'],
+  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'https://startweb-ai.vercel.app', 'https://startweb-ai-git-main-startweb-ai.vercel.app'],
   credentials: true
 }));
 app.use(express.json());
@@ -110,9 +135,6 @@ app.get('/api/registrations', async (req, res) => {
     });
   }
 });
-
-// Registration endpoint
-
 
 // Get registration by ID
 app.get('/api/registrations/:id', async (req, res) => {
@@ -320,7 +342,7 @@ const startServer = async () => {
     
     // Try to connect to MongoDB, but don't fail if it's not available
     try {
-      const client = await connectDB();
+      await connectDB();
       registrationsCollection = db.collection('event');
       console.log('✅ MongoDB connected successfully');
     } catch (mongoError) {
@@ -328,26 +350,38 @@ const startServer = async () => {
       console.log('MongoDB error:', mongoError.message);
       
       // Use in-memory storage as fallback
+      const inMemoryData = [];
       registrationsCollection = {
         insertOne: async (doc) => {
           console.log('📝 Storing in memory:', doc);
+          inMemoryData.push(doc);
           return { insertedId: 'memory-' + Date.now() };
         },
         find: () => ({
           toArray: async () => {
             console.log('📋 Returning in-memory data');
-            return [];
+            return inMemoryData;
           }
         }),
         findOne: async (query) => {
           console.log('🔍 Finding in memory:', query);
-          return null;
+          return inMemoryData.find(item => item.id === query.id) || null;
         },
         updateOne: async (query, update) => {
           console.log('✏️  Updating in memory:', query, update);
+          const index = inMemoryData.findIndex(item => item.id === query.id);
+          if (index !== -1) {
+            inMemoryData[index] = { ...inMemoryData[index], ...update.$set };
+            return { matchedCount: 1 };
+          }
           return { matchedCount: 0 };
         },
-                 collectionName: 'event'
+        collectionName: 'event'
+      };
+      
+      // Set db object for in-memory storage
+      db = {
+        databaseName: 'in-memory-db'
       };
     }
     
@@ -368,8 +402,5 @@ const startServer = async () => {
 startServer();
 
 module.exports = app;
-
-
-
 
 
