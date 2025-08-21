@@ -171,7 +171,9 @@ app.post("/api/register", upload.single('paymentScreenshot'), async (req, res) =
       emailSent: false
     });
 
+    console.log('📝 About to save registration:', registration);
     await registration.save();
+    console.log('✅ Registration saved successfully');
     registrationCounter++;
 
     res.status(201).json({
@@ -223,15 +225,71 @@ app.use('*', (req, res) => res.status(404).json({ success: false, message: 'Endp
 // Start
 const startServer = async () => {
   try {
-    await mongoose.connect(MONGO_URI);
-    console.log('✅ MongoDB connected successfully');
+    console.log('Starting server...');
+    
+    // Try to connect to MongoDB, but don't fail if it's not available
+    try {
+      await mongoose.connect(MONGO_URI);
+      console.log('✅ MongoDB connected successfully');
+    } catch (mongoError) {
+      console.log('⚠️  MongoDB not available, using in-memory storage');
+      console.log('MongoDB error:', mongoError.message);
+      
+      // Use in-memory storage as fallback
+      const inMemoryData = [];
+      
+      // Create a mock Registration model for in-memory storage
+      const MockRegistration = function(data) {
+        this.id = data.id;
+        this.teamName = data.teamName;
+        this.teamSize = data.teamSize;
+        this.participants = data.participants;
+        this.portfolioUrl = data.portfolioUrl;
+        this.paymentScreenshot = data.paymentScreenshot;
+        this.entryFee = data.entryFee;
+        this.registrationDate = data.registrationDate || new Date();
+        this.status = data.status || 'pending';
+        this.emailSent = data.emailSent || false;
+      };
+      
+      MockRegistration.find = async () => {
+        console.log('📋 Returning in-memory data');
+        return inMemoryData;
+      };
+      
+      MockRegistration.findOne = async (query) => {
+        console.log('🔍 Finding in memory:', query);
+        return inMemoryData.find(item => item.id === query.id) || null;
+      };
+      
+      MockRegistration.prototype.save = async function() {
+        console.log('📝 Storing in memory:', this);
+        inMemoryData.push(this);
+        return this;
+      };
+      
+      MockRegistration.findOneAndUpdate = async (query, update, options) => {
+        console.log('✏️  Updating in memory:', query, update);
+        const index = inMemoryData.findIndex(item => item.id === query.id);
+        if (index !== -1) {
+          inMemoryData[index] = { ...inMemoryData[index], ...update.$set };
+          return inMemoryData[index];
+        }
+        return null;
+      };
+      
+      // Replace the Registration model with our mock
+      global.Registration = MockRegistration;
+    }
+    
     app.listen(PORT, () => {
       console.log(`🚀 Backend running on port ${PORT}`);
       console.log(`📁 Uploads directory: ${uploadsDir}`);
       console.log(`🌐 Server URL: http://localhost:${PORT}`);
+      console.log(`🗄️  Storage: ${mongoose.connection.readyState === 1 ? 'MongoDB' : 'In-Memory'}`);
     });
-  } catch (err) {
-    console.error('❌ MongoDB connection failed:', err.message);
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
     process.exit(1);
   }
 };
