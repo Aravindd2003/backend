@@ -183,8 +183,8 @@ app.use((error, req, res, next) => {
 const startServer = async () => {
   try {
     console.log('Starting server...');
-    await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
-    console.log('✅ MongoDB connected successfully');
+    await mongoose.connect(MONGO_URI);
+    console.log('✅ MongoDB connected successfully:', MONGO_URI);
 
     app.listen(PORT, () => {
       console.log(`🚀 Backend running on port ${PORT}`);
