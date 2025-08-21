@@ -1,11 +1,10 @@
 console.log('🚀 Starting Frontend Arena Backend...');
-
+const mongoose = require("mongoose");
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { MongoClient } = require('mongodb');
 require('dotenv').config();
 
 console.log('✅ All modules loaded successfully');
@@ -15,73 +14,66 @@ const PORT = process.env.PORT || 5000;
 
 // MongoDB connection
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/frontend-arena';
-let db;
 
-const connectDB = async () => {
-  try {
-    console.log('Attempting to connect to MongoDB at:', MONGO_URI);
-    
-    // MongoDB connection options
-    const options = {
-      serverSelectionTimeoutMS: 10000,
-      socketTimeoutMS: 45000,
-      maxPoolSize: 10,
-      minPoolSize: 1,
-    };
-
-    // If it's an Atlas connection, add SSL options
-    if (MONGO_URI.includes('mongodb.net')) {
-      options.tls = true;
-      options.tlsAllowInvalidCertificates = true;
-      options.tlsAllowInvalidHostnames = true;
+// Mongoose Schema
+const RegistrationSchema = new mongoose.Schema({
+  id: { type: String, required: true, unique: true },
+  teamName: { type: String, required: true },
+  teamSize: { type: Number, required: true, min: 1, max: 3 },
+  participants: [
+    {
+      name: String,
+      email: String,
+      phone: String,
+      college: String,
+      departmentYear: String,
+      linkedin: String,
+      portfolio: String,
     }
+  ],
+  portfolioUrl: { type: String, required: true },
+  paymentScreenshot: { type: String, required: true },
+  entryFee: Number,
+  registrationDate: { type: Date, default: Date.now },
+  status: { type: String, default: "pending" },
+  emailSent: { type: Boolean, default: false }
+});
 
-    const client = new MongoClient(MONGO_URI, options);
-    await client.connect();
-    db = client.db();
-    console.log('✅ Connected to MongoDB successfully');
-    console.log('Database name:', db.databaseName);
-    console.log('Available collections:', await db.listCollections().toArray());
-    return client;
-  } catch (err) {
-    console.error('❌ MongoDB connection failed:', err.message);
-    console.error('Full error:', err);
-    throw err; // Don't exit, let the fallback handle it
-  }
-};
+const Registration = mongoose.model("event", RegistrationSchema); // collection = "event"
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'https://startweb-ai.vercel.app', 'https://startweb-ai-git-main-startweb-ai.vercel.app'],
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:5173',
+    'https://startweb-ai.vercel.app',
+    'https://startweb-ai-git-main-startweb-ai.vercel.app'
+  ],
   credentials: true
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Create uploads directory if it doesn't exist
+// Create uploads dir
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Configure multer for file uploads
+// Multer config
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadsDir);
-  },
-  filename: function (req, file, cb) {
+  destination: (req, file, cb) => cb(null, uploadsDir),
+  filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
   }
 });
 
-const upload = multer({ 
-  storage: storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
-  },
-  fileFilter: function (req, file, cb) {
-    // Allow images and PDFs
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
       cb(null, true);
     } else {
@@ -90,13 +82,12 @@ const upload = multer({
   }
 });
 
-// MongoDB collection for event registrations
-let registrationsCollection;
+// Auto-increment counter
 let registrationCounter = 1;
 
 // Routes
 app.get('/', (req, res) => {
-  res.json({ 
+  res.json({
     message: 'Frontend Arena 2025 Backend API',
     version: '1.0.0',
     endpoints: {
@@ -107,121 +98,68 @@ app.get('/', (req, res) => {
   });
 });
 
-// Health check endpoint
+// Health check
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
+  res.json({ status: 'OK', timestamp: new Date().toISOString(), uptime: process.uptime() });
 });
 
-// Get all registrations (admin endpoint)
+// Get all registrations
 app.get('/api/registrations', async (req, res) => {
   try {
-    const registrations = await registrationsCollection.find({}).toArray();
-    res.json({
-      success: true,
-      count: registrations.length,
-      registrations: registrations
-    });
+    const registrations = await Registration.find();
+    res.json({ success: true, count: registrations.length, registrations });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching registrations',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Error fetching registrations', error: error.message });
   }
 });
 
 // Get registration by ID
 app.get('/api/registrations/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const registration = await registrationsCollection.findOne({ id: id });
-    
-    if (!registration) {
-      return res.status(404).json({
-        success: false,
-        message: 'Registration not found'
-      });
-    }
-
-    res.json({
-      success: true,
-      registration
-    });
+    const registration = await Registration.findOne({ id: req.params.id });
+    if (!registration) return res.status(404).json({ success: false, message: 'Registration not found' });
+    res.json({ success: true, registration });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching registration',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Error fetching registration', error: error.message });
   }
 });
 
-
+// Register team
 app.post("/api/register", upload.single('paymentScreenshot'), async (req, res) => {
   try {
     const { teamName, teamSize, participants, portfolioUrl } = req.body;
 
-    // Validate required fields
     if (!teamName || !teamSize || !participants || !portfolioUrl) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required fields'
-      });
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
-    // Validate team size
     const size = parseInt(teamSize);
     if (size < 1 || size > 3) {
-      return res.status(400).json({
-        success: false,
-        message: 'Team size must be between 1 and 3'
-      });
+      return res.status(400).json({ success: false, message: 'Team size must be between 1 and 3' });
     }
 
-    // Parse participants from JSON string
     let participantsArray;
     try {
       participantsArray = JSON.parse(participants);
-    } catch (error) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid participants data format'
-      });
+    } catch {
+      return res.status(400).json({ success: false, message: 'Invalid participants data format' });
     }
 
-    // Validate participants array
     if (!Array.isArray(participantsArray) || participantsArray.length !== size) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid participants data'
-      });
+      return res.status(400).json({ success: false, message: 'Invalid participants data' });
     }
 
-    // Validate first participant (required)
     const firstParticipant = participantsArray[0];
-    if (!firstParticipant.name || !firstParticipant.email || !firstParticipant.phone || 
-        !firstParticipant.college || !firstParticipant.departmentYear || 
-        !firstParticipant.linkedin || !firstParticipant.portfolio) {
-      return res.status(400).json({
-        success: false,
-        message: 'First participant information is incomplete'
-      });
+    if (!firstParticipant.name || !firstParticipant.email || !firstParticipant.phone ||
+        !firstParticipant.college || !firstParticipant.departmentYear) {
+      return res.status(400).json({ success: false, message: 'First participant information is incomplete' });
     }
 
-    // Check if payment screenshot was uploaded
     if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'Payment screenshot is required'
-      });
+      return res.status(400).json({ success: false, message: 'Payment screenshot is required' });
     }
 
-    // Create registration object
-    const registration = {
+    const registration = new Registration({
       id: `REG-${String(registrationCounter).padStart(4, '0')}`,
       teamName,
       teamSize: size,
@@ -229,21 +167,13 @@ app.post("/api/register", upload.single('paymentScreenshot'), async (req, res) =
       portfolioUrl,
       paymentScreenshot: req.file.filename,
       entryFee: size * 50,
-      registrationDate: new Date().toISOString(),
       status: 'pending',
       emailSent: false
-    };
+    });
 
-    // Store in MongoDB
-    console.log('Attempting to insert registration:', registration);
-    console.log('Collection name:', registrationsCollection.collectionName);
-    console.log('Database name:', db.databaseName);
-    
-    const result = await registrationsCollection.insertOne(registration);
-    console.log('MongoDB insertion result:', result);
+    await registration.save();
     registrationCounter++;
 
-    // Success response
     res.status(201).json({
       success: true,
       message: 'Registration submitted successfully!',
@@ -258,141 +188,50 @@ app.post("/api/register", upload.single('paymentScreenshot'), async (req, res) =
 
   } catch (error) {
     console.error('Registration error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Internal server error', error: error.message });
   }
 });
 
-// Update registration status
+// Update status
 app.patch('/api/registrations/:id/status', async (req, res) => {
   try {
-    const { id } = req.params;
-    const { status } = req.body;
-    
-    const result = await registrationsCollection.updateOne(
-      { id: id },
-      { 
-        $set: { 
-          status: status,
-          updatedAt: new Date().toISOString()
-        }
-      }
+    const result = await Registration.findOneAndUpdate(
+      { id: req.params.id },
+      { $set: { status: req.body.status, updatedAt: new Date() } },
+      { new: true }
     );
-    
-    if (result.matchedCount === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Registration not found'
-      });
-    }
 
-    const updatedRegistration = await registrationsCollection.findOne({ id: id });
-
-    res.json({
-      success: true,
-      message: 'Registration status updated',
-      registration: updatedRegistration
-    });
+    if (!result) return res.status(404).json({ success: false, message: 'Registration not found' });
+    res.json({ success: true, message: 'Registration status updated', registration: result });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error updating registration',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Error updating registration', error: error.message });
   }
 });
 
-// Error handling middleware
+// Error handler
 app.use((error, req, res, next) => {
   console.error('Error:', error);
-  
-  if (error instanceof multer.MulterError) {
-    if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({
-        success: false,
-        message: 'File too large. Maximum size is 5MB.'
-      });
-    }
+  if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({ success: false, message: 'File too large. Max size 5MB.' });
   }
-  
-  res.status(500).json({
-    success: false,
-    message: 'Something went wrong!',
-    error: error.message
-  });
+  res.status(500).json({ success: false, message: 'Something went wrong!', error: error.message });
 });
 
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({
-    success: false,
-    message: 'Endpoint not found'
-  });
-});
+// 404
+app.use('*', (req, res) => res.status(404).json({ success: false, message: 'Endpoint not found' }));
 
-// Start server
+// Start
 const startServer = async () => {
   try {
-    console.log('Starting server...');
-    
-    // Try to connect to MongoDB, but don't fail if it's not available
-    try {
-      await connectDB();
-      registrationsCollection = db.collection('event');
-      console.log('✅ MongoDB connected successfully');
-    } catch (mongoError) {
-      console.log('⚠️  MongoDB not available, using in-memory storage');
-      console.log('MongoDB error:', mongoError.message);
-      
-      // Use in-memory storage as fallback
-      const inMemoryData = [];
-      registrationsCollection = {
-        insertOne: async (doc) => {
-          console.log('📝 Storing in memory:', doc);
-          inMemoryData.push(doc);
-          return { insertedId: 'memory-' + Date.now() };
-        },
-        find: () => ({
-          toArray: async () => {
-            console.log('📋 Returning in-memory data');
-            return inMemoryData;
-          }
-        }),
-        findOne: async (query) => {
-          console.log('🔍 Finding in memory:', query);
-          return inMemoryData.find(item => item.id === query.id) || null;
-        },
-        updateOne: async (query, update) => {
-          console.log('✏️  Updating in memory:', query, update);
-          const index = inMemoryData.findIndex(item => item.id === query.id);
-          if (index !== -1) {
-            inMemoryData[index] = { ...inMemoryData[index], ...update.$set };
-            return { matchedCount: 1 };
-          }
-          return { matchedCount: 0 };
-        },
-        collectionName: 'event'
-      };
-      
-      // Set db object for in-memory storage
-      db = {
-        databaseName: 'in-memory-db'
-      };
-    }
-    
-    // Start the server
+    await mongoose.connect(MONGO_URI);
+    console.log('✅ MongoDB connected successfully');
     app.listen(PORT, () => {
-      console.log(`🚀 Frontend Arena Backend running on port ${PORT}`);
+      console.log(`🚀 Backend running on port ${PORT}`);
       console.log(`📁 Uploads directory: ${uploadsDir}`);
       console.log(`🌐 Server URL: http://localhost:${PORT}`);
-      console.log(`📋 API Documentation: http://localhost:${PORT}/`);
-      console.log(`🗄️  Storage: ${registrationsCollection.collectionName === 'event' ? 'MongoDB' : 'In-Memory'}`);
     });
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
+  } catch (err) {
+    console.error('❌ MongoDB connection failed:', err.message);
     process.exit(1);
   }
 };
@@ -400,6 +239,3 @@ const startServer = async () => {
 startServer();
 
 module.exports = app;
-
-
-
