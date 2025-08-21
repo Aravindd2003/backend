@@ -14,13 +14,35 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // MongoDB connection
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://aravind:QXo4AwPwxo6wmN3w@arshan.sgtmz7r.mongodb.net/?retryWrites=true&w=majority&appName=arshan/frontend';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/frontend-arena';
 let db;
 
 const connectDB = async () => {
   try {
     console.log('Attempting to connect to MongoDB at:', MONGO_URI);
-    const client = new MongoClient(MONGO_URI);
+    
+    // MongoDB connection options
+    const options = {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 10,
+      minPoolSize: 1,
+    };
+
+    // If it's an Atlas connection, add SSL options
+    if (MONGO_URI.includes('mongodb.net')) {
+      options.ssl = true;
+      options.sslValidate = false;
+      options.sslCA = undefined;
+      options.tls = true;
+      options.tlsAllowInvalidCertificates = true;
+      options.tlsAllowInvalidHostnames = true;
+      options.tlsInsecure = true;
+    }
+
+    const client = new MongoClient(MONGO_URI, options);
     await client.connect();
     db = client.db();
     console.log('✅ Connected to MongoDB successfully');
@@ -30,7 +52,7 @@ const connectDB = async () => {
   } catch (err) {
     console.error('❌ MongoDB connection failed:', err.message);
     console.error('Full error:', err);
-    process.exit(1);
+    throw err; // Don't exit, let the fallback handle it
   }
 };
 
@@ -372,6 +394,5 @@ const startServer = async () => {
 startServer();
 
 module.exports = app;
-
 
 
