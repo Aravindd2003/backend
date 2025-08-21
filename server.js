@@ -14,7 +14,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // MongoDB connection
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/frontend-arena';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://aravind:QXo4AwPwxo6wmN3w@arshan.sgtmz7r.mongodb.net/?retryWrites=true&w=majority&appName=arshan/frontend';
 let db;
 
 const connectDB = async () => {
@@ -372,5 +372,6 @@ const startServer = async () => {
 startServer();
 
 module.exports = app;
+
 
 
