@@ -37,12 +37,12 @@ const RegistrationSchema = new mongoose.Schema({
   emailSent: { type: Boolean, default: false }
 });
 
-let Registration = mongoose.model("event", RegistrationSchema);
+let Registration = mongoose.model("event", RegistrationSchema); // collection = "event"
 
 // --- MIDDLEWARE ---
 app.use(cors({
   origin: process.env.NODE_ENV === "production"
-    ? ["https://your-frontend-domain.com"] // change to your frontend prod domain
+    ? ["https://your-frontend-domain.com"] // change this to your real frontend domain
     : ["http://localhost:5173", "http://localhost:3000"],
   credentials: true
 }));
@@ -54,6 +54,7 @@ const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => {
@@ -61,9 +62,10 @@ const storage = multer.diskStorage({
     cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
   }
 });
+
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
       cb(null, true);
@@ -76,14 +78,17 @@ const upload = multer({
 // --- ROUTES ---
 let registrationCounter = 1;
 
+// Root
 app.get('/', (req, res) => {
   res.json({ message: 'Frontend Arena 2025 Backend API', version: '1.0.0' });
 });
 
+// Health
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString(), uptime: process.uptime() });
 });
 
+// All registrations
 app.get('/api/registrations', async (req, res) => {
   try {
     const registrations = await Registration.find();
@@ -93,6 +98,7 @@ app.get('/api/registrations', async (req, res) => {
   }
 });
 
+// Single registration
 app.get('/api/registrations/:id', async (req, res) => {
   try {
     const registration = await Registration.findOne({ id: req.params.id });
@@ -103,9 +109,14 @@ app.get('/api/registrations/:id', async (req, res) => {
   }
 });
 
+// Register new team
 app.post("/api/register", upload.single('paymentScreenshot'), async (req, res) => {
   try {
+    console.log("📩 Incoming body:", req.body);
+    console.log("📎 Incoming file:", req.file);
+
     const { teamName, teamSize, participants, portfolioUrl } = req.body;
+
     if (!teamName || !teamSize || !participants || !portfolioUrl) {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
@@ -151,11 +162,12 @@ app.post("/api/register", upload.single('paymentScreenshot'), async (req, res) =
     });
 
   } catch (error) {
-    console.error('Registration error:', error);
+    console.error('❌ Registration error:', error);
     res.status(500).json({ success: false, message: 'Internal server error', error: error.message });
   }
 });
 
+// Update status
 app.patch('/api/registrations/:id/status', async (req, res) => {
   try {
     const result = await Registration.findOneAndUpdate(
@@ -198,3 +210,5 @@ const startServer = async () => {
 };
 
 startServer();
+
+module.exports = app;
