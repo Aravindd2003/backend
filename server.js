@@ -39,7 +39,6 @@ const connectDB = async () => {
       options.tls = true;
       options.tlsAllowInvalidCertificates = true;
       options.tlsAllowInvalidHostnames = true;
-      options.tlsInsecure = true;
     }
 
     const client = new MongoClient(MONGO_URI, options);
@@ -397,6 +396,7 @@ const startServer = async () => {
 startServer();
 
 module.exports = app;
+
 
 
 
