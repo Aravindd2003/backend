@@ -158,7 +158,8 @@ app.post("/api/register", upload.single('paymentScreenshot'), async (req, res) =
     res.status(201).json({
       success: true,
       message: 'Registration submitted successfully!',
-      registrationId: registration.id
+      registrationId: registration.id,
+      data: registration
     });
 
   } catch (error) {
@@ -212,3 +213,4 @@ const startServer = async () => {
 startServer();
 
 module.exports = app;
+
