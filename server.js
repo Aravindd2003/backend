@@ -30,7 +30,11 @@ const RegistrationSchema = new mongoose.Schema({
     }
   ],
   portfolioUrl: { type: String, required: true },
-  paymentScreenshot: { type: String, required: true },
+  // ✅ Store file as binary in MongoDB
+  paymentScreenshot: {
+    data: Buffer,
+    contentType: String
+  },
   entryFee: Number,
   registrationDate: { type: Date, default: Date.now },
   status: { type: String, default: "pending" },
@@ -42,7 +46,7 @@ let Registration = mongoose.model("event", RegistrationSchema); // collection = 
 // --- MIDDLEWARE ---
 app.use(cors({
   origin: process.env.NODE_ENV === "production"
-    ? ["https://your-frontend-domain.com"] // change this to your real frontend domain
+    ? ["https://your-frontend-domain.com"]
     : ["http://localhost:5173", "http://localhost:3000"],
   credentials: true
 }));
@@ -91,7 +95,7 @@ app.get('/api/health', (req, res) => {
 // All registrations
 app.get('/api/registrations', async (req, res) => {
   try {
-    const registrations = await Registration.find();
+    const registrations = await Registration.find().select("-paymentScreenshot"); // ✅ exclude binary
     res.json({ success: true, count: registrations.length, registrations });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Error fetching registrations', error: error.message });
@@ -101,7 +105,7 @@ app.get('/api/registrations', async (req, res) => {
 // Single registration
 app.get('/api/registrations/:id', async (req, res) => {
   try {
-    const registration = await Registration.findOne({ id: req.params.id });
+    const registration = await Registration.findOne({ id: req.params.id }).select("-paymentScreenshot");
     if (!registration) return res.status(404).json({ success: false, message: 'Registration not found' });
     res.json({ success: true, registration });
   } catch (error) {
@@ -110,50 +114,41 @@ app.get('/api/registrations/:id', async (req, res) => {
 });
 
 // Register new team
+const { v4: uuidv4 } = require('uuid');
+
 app.post("/api/register", upload.single('paymentScreenshot'), async (req, res) => {
   try {
     console.log("📩 Incoming body:", req.body);
     console.log("📎 Incoming file:", req.file);
 
-    const { teamName, teamSize, participants, portfolioUrl } = req.body;
+    if (!req.body) {
+      return res.status(400).json({ success: false, message: "No body received" });
+    }
 
-    if (!teamName || !teamSize || !participants || !portfolioUrl) {
+    const { teamName, teamSize, participants, portfolioUrl } = req.body;
+    if (!teamName || !teamSize || !participants || !portfolioUrl || !req.file) {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
     const size = parseInt(teamSize);
-    if (size < 1 || size > 3) {
-      return res.status(400).json({ success: false, message: 'Team size must be between 1 and 3' });
-    }
-
-    let participantsArray;
-    try {
-      participantsArray = JSON.parse(participants);
-    } catch {
-      return res.status(400).json({ success: false, message: 'Invalid participants data format' });
-    }
-
-    if (!Array.isArray(participantsArray) || participantsArray.length !== size) {
-      return res.status(400).json({ success: false, message: 'Invalid participants data' });
-    }
-
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: 'Payment screenshot is required' });
-    }
+    let participantsArray = JSON.parse(participants);
 
     const registration = new Registration({
-      id: `REG-${String(registrationCounter).padStart(4, '0')}`,
+      id: uuidv4(),
       teamName,
       teamSize: size,
       participants: participantsArray.slice(0, size),
       portfolioUrl,
-      paymentScreenshot: req.file.filename,
+      paymentScreenshot: {
+        data: fs.readFileSync(req.file.path),   // ✅ store binary file
+        contentType: req.file.mimetype
+      },
       entryFee: size * 50,
       status: 'pending'
     });
 
     await registration.save();
-    registrationCounter++;
+    fs.unlinkSync(req.file.path); // ✅ remove local file after saving
 
     res.status(201).json({
       success: true,
@@ -161,10 +156,24 @@ app.post("/api/register", upload.single('paymentScreenshot'), async (req, res) =
       registrationId: registration.id,
       data: registration
     });
-
   } catch (error) {
     console.error('❌ Registration error:', error);
     res.status(500).json({ success: false, message: 'Internal server error', error: error.message });
+  }
+});
+
+// --- Download payment screenshot ---
+app.get("/api/registrations/:id/payment", async (req, res) => {
+  try {
+    const registration = await Registration.findOne({ id: req.params.id });
+    if (!registration || !registration.paymentScreenshot) {
+      return res.status(404).json({ success: false, message: "File not found" });
+    }
+
+    res.contentType(registration.paymentScreenshot.contentType);
+    res.send(registration.paymentScreenshot.data);
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error fetching file", error: error.message });
   }
 });
 
@@ -213,4 +222,3 @@ const startServer = async () => {
 startServer();
 
 module.exports = app;
-
