@@ -46,7 +46,7 @@ let Registration = mongoose.model("event", RegistrationSchema); // collection = 
 // --- MIDDLEWARE ---
 app.use(cors({
   origin: process.env.NODE_ENV === "production"
-    ? ["https://your-frontend-domain.com"]
+    ? ["https://frontendarena2025.etisalar.in/"]
     : ["http://localhost:5173", "http://localhost:3000"],
   credentials: true
 }));
